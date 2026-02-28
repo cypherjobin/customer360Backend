@@ -152,6 +152,13 @@ def _fix_escalation_risk_vs_threats(summary: Dict, report: ValidationReport):
     switching_intent = threats.get('competitor_threats', {}).get('switching_intent', False)
     churn_prob = dashboard.get('churn_risk', {}).get('probability', '')
 
+    # B19 FIX: Extreme frustration + high contact volume is a real escalation predictor
+    # even when no explicit threat keywords are present.
+    # Record 10843570 confirmed this gap: frustration=100, 8 contacts, churn=Very High → escalation=Low.
+    frustration_score = (summary.get('sentiment_analysis') or {}).get('frustration_score') or 0
+    total_contacts = ((summary.get('interaction_summary') or {}).get('total_contacts') or 0)
+    high_friction = (frustration_score >= 80 and total_contacts >= 5)
+
     needs_upgrade = False
     reason = ''
 
@@ -162,6 +169,13 @@ def _fix_escalation_risk_vs_threats(summary: Dict, report: ValidationReport):
     if switching_intent and churn_prob in ('High', 'Very High') and current_value < 0.8:
         needs_upgrade = True
         reason = f'switching_intent=True with churn_probability={churn_prob} requires escalation_risk >= Medium'
+
+    # B19 FIX: high friction without explicit threat keywords
+    if high_friction and current_value < 0.8:
+        needs_upgrade = True
+        reason = (f'frustration_score={frustration_score} (>=80) and '
+                  f'total_contacts={total_contacts} (>=5) signal real escalation risk '
+                  f'even without explicit threat keywords')
 
     if needs_upgrade:
         new_value = 0.8
@@ -270,6 +284,15 @@ def _fix_retention_only_with_no_risk(summary: Dict, report: ValidationReport):
         if gating:
             gating['priority_focus'] = new_focus
 
+        # B06 FIX: Also reset retention_priority in BOTH authoritative locations.
+        # Without this reset the downgrade itself introduces a new contradiction:
+        #   priority_focus = STANDARD (low urgency)
+        #   retention_priority = True  (high urgency — contradicts the downgrade)
+        rrs['retention_priority'] = False
+        var_section = summary.get('value_at_risk')
+        if isinstance(var_section, dict):
+            var_section['retention_priority'] = False
+
 
 def _fix_health_label_terminology(summary: Dict, report: ValidationReport):
     """
@@ -327,21 +350,29 @@ def validate_and_reconcile(summary: Dict) -> Tuple[Dict, ValidationReport]:
     """
     report = ValidationReport()
 
-    # Run all validation passes
+    # ── Pass order matters ──────────────────────────────────────────────────────
+    # 1. Single-source-of-truth: derive labels from authoritative numeric scores
     _fix_frustration_consistency(summary, report)
     _fix_health_score_consistency(summary, report)
-    _fix_health_label_terminology(summary, report)          # NEW: canonical label terms
+    _fix_health_label_terminology(summary, report)           # canonical label terms
     _fix_churn_risk_consistency(summary, report)
     _fix_churn_action_consistency(summary, report)
+    # 2. Cross-field structural consistency
     _fix_services_consistency(summary, report)
-    _fix_retention_consistency(summary, report)             # FIXED: now reads retention_risk_signals
-    _fix_retention_only_with_no_risk(summary, report)       # NEW: RETENTION_ONLY without evidence
-    _fix_switching_intent_as_cancellation(summary, report)  # NEW: port-out = cancellation
-    _fix_gating_consistency(summary, report)                # FIXED: +count +bad case_id +NBA +focus sync
-    _fix_escalation_risk_vs_threats(summary, report)        # NEW: cancellation/switching → escalation
+    _fix_retention_consistency(summary, report)              # reads retention_risk_signals
+    _fix_retention_only_with_no_risk(summary, report)        # B06: downgrades + resets priority
+    _fix_switching_intent_as_cancellation(summary, report)   # port-out = cancellation
+    # 3. Business-rule enforcement
+    _fix_gating_consistency(summary, report)                 # B13+B28: dict NBA, keywords, status
+    _fix_escalation_risk_vs_threats(summary, report)         # B19: +high-friction path
     _fix_threat_consistency(summary, report)
+    # 4. Content / type fixes
     _fix_evidence_types(summary, report)
+    _fix_evidence_classification(summary, report)            # B04: 'unresolved_case' for closed cases
+    _fix_expired_contract_opportunities(summary, report)     # B18: expired contract upgrade offers
     _detect_boilerplate_text(summary, report)
+    # 5. Cleanup — MUST run last (evaluates post-fix state of all fields)
+    _cleanup_resolved_dqws(summary, report)                  # B02: remove stale DQWs
 
     # Add validation metadata to summary
     summary['validation_metadata'] = {
@@ -842,10 +873,26 @@ def _fix_gating_consistency(summary: Dict, report: ValidationReport):
                 ))
                 gating['unresolved_critical_high_count'] = 0
 
-    # ── RULE 4: Detect description text used as case_id ─────────────────────
+    # ── RULE 4a: B28 FIX — normalize empty-string status in blocking_issues ──────
+    # An empty string silently skips every 'OPEN'/'RESOLVED'/... branch downstream.
+    blocking_issues = gating.get('blocking_issues', [])
+    for bi in blocking_issues:
+        raw_status = bi.get('status')
+        if raw_status is not None and isinstance(raw_status, str) and raw_status.strip() == '':
+            bi['status'] = 'UNKNOWN'
+            report.add_issue(ValidationIssue(
+                code='BLOCKING_ISSUE_EMPTY_STATUS',
+                severity='LOW',
+                field='recommended_actions.action_gating.blocking_issues[].status',
+                description='blocking_issue.status="" normalised to "UNKNOWN" (B28 fix).',
+                fixed=True,
+                original_value='""',
+                corrected_value='UNKNOWN'
+            ))
+
+    # ── RULE 4: Detect description text used as case_id ─────────────────────────
     # A valid case_id matches INC/Pega patterns or is short (< 60 chars with no spaces)
     # Description text is long, contains spaces, and doesn't match case ID patterns
-    blocking_issues = gating.get('blocking_issues', [])
     case_id_pattern = re.compile(
         r'^(INC\d+|Pega-\d+|SN-\d+|CAS-\d+|[A-Z]{2,5}\d{4,}|[A-Z]{3}-\d{3,})$',
         re.IGNORECASE
@@ -867,32 +914,58 @@ def _fix_gating_consistency(summary: Dict, report: ValidationReport):
                     ))
                     blocking_issue['case_id'] = None  # Null it — better than wrong data
 
-    # ── RULE 5: next_best_action must not recommend upsell if gated ─────────
-    nba = recommended.get('next_best_action', '')
+    # ── RULE 5: next_best_action must not recommend upsell if gated ─────────────
+    # B13 FIX — two root causes corrected here:
+    #   A) next_best_action can be a DICT {"action": "...", "rationale": "..."}.
+    #      The old `isinstance(nba, str)` guard silently skipped dicts entirely,
+    #      meaning upsell text inside a dict NBA was never blocked by the GDPR gate.
+    #   B) The keyword list was too narrow — 'enhancements', 'incentive', 'loyalty offer'
+    #      were absent, so "explore low-cost plan enhancements" bypassed the gate.
+    nba_raw = recommended.get('next_best_action', '')
+    # Normalise: extract the action text whether NBA is a string or a dict
+    if isinstance(nba_raw, dict):
+        nba_text = (nba_raw.get('action') or '')
+    else:
+        nba_text = str(nba_raw) if nba_raw else ''
+
     safe_to_upsell = gating.get('safe_to_upsell', True)
-    if not safe_to_upsell and isinstance(nba, str):
-        upsell_keywords = ['upgrade', 'upsell', 'offer', 'plan upgrade', 'additional services',
-                           'explore', 'promote', 'cross-sell', 'bundle']
-        if any(kw in nba.lower() for kw in upsell_keywords):
-            # Determine replacement based on gating reason
+    if not safe_to_upsell and nba_text:
+        upsell_keywords = [
+            # original set
+            'upgrade', 'upsell', 'offer', 'plan upgrade', 'additional services',
+            'explore', 'promote', 'cross-sell', 'bundle',
+            # B13 FIX: extended — these were bypassing the gate
+            'enhance', 'enhancements', 'plan enhancement', 'plan enhancements',
+            'loyalty benefit', 'loyalty offer', 'loyalty reward', 'loyalty incentive',
+            'incentive', 'introduce', 'tailored offer', 'value-added',
+            'add-on', 'add on', 'supplementary service', 'complementary service',
+        ]
+        if any(kw in nba_text.lower() for kw in upsell_keywords):
             blocking_count = gating.get('unresolved_critical_high_count', 0)
             gdpr_block = gating.get('gdpr_block', False)
             if blocking_count and blocking_count > 0:
-                safe_nba = f'Resolve {blocking_count} open issue(s) before considering upsell. Focus on customer satisfaction.'
+                safe_nba = (f'Resolve {blocking_count} open issue(s) before considering upsell. '
+                            f'Focus on customer satisfaction.')
             elif gdpr_block:
-                safe_nba = 'Reactive service support only. Customer has opted out of marketing communications — no proactive upsell permitted.'
+                safe_nba = ('Reactive service support only. Customer has opted out of marketing '
+                            'communications — no proactive upsell permitted.')
             else:
-                safe_nba = 'Focus on issue resolution and customer satisfaction before considering upsell opportunities.'
+                safe_nba = ('Focus on issue resolution and customer satisfaction before '
+                            'considering upsell opportunities.')
             report.add_issue(ValidationIssue(
                 code='NEXT_BEST_ACTION_GATING_CONFLICT',
                 severity='HIGH',
                 field='recommended_actions.next_best_action',
-                description=f'next_best_action recommends upsell but safe_to_upsell=False. Replacing with safe action.',
+                description='next_best_action recommends upsell but safe_to_upsell=False. Replacing with safe action.',
                 fixed=True,
-                original_value=nba[:80],
+                original_value=nba_text[:80],
                 corrected_value=safe_nba[:80]
             ))
-            recommended['next_best_action'] = safe_nba
+            # Write back preserving the original type (dict or string)
+            if isinstance(nba_raw, dict):
+                nba_raw['action'] = safe_nba   # mutate in place; dict is already referenced
+            else:
+                recommended['next_best_action'] = safe_nba
 
     # ── RULE 6: priority_focus must match between recommended_actions and action_gating ──
     ra_focus = recommended.get('priority_focus', '')
@@ -1061,3 +1134,145 @@ def _fix_evidence_types(summary: Dict, report: ValidationReport):
                         corrected_value='All objects'
                     ))
                     threats[threat_type]['evidence'] = standardized
+
+
+# ============================================================================
+# B06 FIX helper — reset retention_priority when RETENTION_ONLY is downgraded
+# (called at end of _fix_retention_only_with_no_risk after focus is changed)
+# ============================================================================
+
+def _cleanup_resolved_dqws(summary: Dict, report: ValidationReport):
+    """
+    B02 FIX: Remove Data Quality Warnings whose described condition no longer exists.
+
+    Root cause: The summariser adds DQWs (e.g. 'retention_priority_contradiction')
+    BEFORE the validator runs.  The validator then fixes the underlying fields, but
+    the DQW is never removed.  Agents read HIGH-severity warnings about states that
+    have already been corrected.
+
+    MUST run LAST in validate_and_reconcile so every field fix is already applied
+    before we evaluate whether each DQW is still valid.
+    """
+    dqws = summary.get('data_quality_warnings', [])
+    if not dqws:
+        return
+
+    rrs    = summary.get('retention_risk_signals', {})
+    rec    = summary.get('recommended_actions', {})
+    var    = summary.get('value_at_risk', {})
+
+    RETENTION_FOCUS = {'RETENTION_ONLY', 'LEGAL_REVIEW_REQUIRED', 'URGENT_RESOLUTION'}
+
+    retained = []
+    removed  = 0
+
+    for dqw in dqws:
+        dqw_type = dqw.get('type', '')
+        keep = True
+
+        if dqw_type == 'retention_priority_contradiction':
+            # Stale if priority_focus is no longer a retention-mode value
+            # AND both retention_priority stores now agree with each other.
+            pf       = rec.get('priority_focus', '')
+            rrs_prio = rrs.get('retention_priority')
+            var_prio = var.get('retention_priority')
+            if pf not in RETENTION_FOCUS and rrs_prio == var_prio:
+                keep = False   # contradiction has been resolved by validator
+
+        # Additional resolvable DQW types can be added here following the same pattern.
+
+        if keep:
+            retained.append(dqw)
+        else:
+            removed += 1
+
+    if removed > 0:
+        report.add_issue(ValidationIssue(
+            code='STALE_DQW_REMOVED',
+            severity='LOW',
+            field='data_quality_warnings',
+            description=(f'Removed {removed} DQW(s) whose described condition was '
+                         f'resolved by validation (B02 fix).'),
+            fixed=True,
+            original_value=f'{len(dqws)} warning(s)',
+            corrected_value=f'{len(retained)} warning(s)'
+        ))
+        summary['data_quality_warnings'] = retained
+
+
+def _fix_evidence_classification(summary: Dict, report: ValidationReport):
+    """
+    B04 FIX: sentiment_analysis.evidence[].type='unresolved_case' for resolved cases.
+
+    The evidence builder sets type at generation time from the raw status field.
+    If the status already indicates resolution, the type is wrong.
+    Agents see 'unresolved case' evidence entries for cases that are already closed.
+    """
+    evidence_list = (summary.get('sentiment_analysis') or {}).get('evidence', [])
+    for ev in evidence_list:
+        if ev.get('type') != 'unresolved_case':
+            continue
+        status = (ev.get('status') or '').upper()
+        if status in ('RESOLVED', 'RESOLVED-COMPLETED', 'CLOSED', 'CLOSED-RESOLVED',
+                      'COMPLETE', 'COMPLETED'):
+            report.add_issue(ValidationIssue(
+                code='EVIDENCE_TYPE_RESOLVED_MISMATCH',
+                severity='MEDIUM',
+                field='sentiment_analysis.evidence[].type',
+                description=(f'evidence.type="unresolved_case" but '
+                             f'status="{ev.get("status")}". Correcting to "resolved_case".'),
+                fixed=True,
+                original_value='unresolved_case',
+                corrected_value='resolved_case'
+            ))
+            ev['type'] = 'resolved_case'
+
+
+def _fix_expired_contract_opportunities(summary: Dict, report: ValidationReport):
+    """
+    B18 FIX: opportunity_actions built from expired device contract dates.
+
+    Python's extract_revenue_opportunities() guards days_remaining > 0, but the LLM
+    receives the raw device payload and can hallucinate 'contract ends in N months'
+    from a date already in the past.  Those LLM-written opportunity_actions are never
+    validated by Python.
+
+    Strategy: scan every opportunity_action evidence block for contract_end_date.
+    If the date is in the past → remove the opportunity.
+    """
+    rec  = summary.get('recommended_actions', {})
+    opps = rec.get('opportunity_actions', [])
+    if not opps:
+        return
+
+    today   = datetime.now().date()
+    cleaned = []
+
+    for opp in opps:
+        ev      = opp.get('evidence') or {}
+        end_str = ev.get('contract_end_date')
+
+        if end_str:
+            try:
+                end_date = datetime.strptime(str(end_str)[:10], '%Y-%m-%d').date()
+                if end_date < today:
+                    days_ago = (today - end_date).days
+                    report.add_issue(ValidationIssue(
+                        code='EXPIRED_CONTRACT_OPPORTUNITY',
+                        severity='HIGH',
+                        field='recommended_actions.opportunity_actions[].evidence.contract_end_date',
+                        description=(f'Opportunity references contract_end_date={end_str} '
+                                     f'which is {days_ago} day(s) in the past. '
+                                     f'Removing stale upgrade opportunity (B18 fix).'),
+                        fixed=True,
+                        original_value=end_str,
+                        corrected_value='REMOVED'
+                    ))
+                    continue   # drop this opportunity
+            except (ValueError, TypeError):
+                pass           # unparseable date — leave as-is
+
+        cleaned.append(opp)
+
+    if len(cleaned) != len(opps):
+        rec['opportunity_actions'] = cleaned

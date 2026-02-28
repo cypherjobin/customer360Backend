@@ -3187,10 +3187,14 @@ def generate_dashboard_metrics(summary_json, payload):
 
     mobile_active = customer_profile.get('mobile_active', True)
     fixed_active = customer_profile.get('fixed_active', True)
+    # B12 FIX: pass subscription flags so the penalty only fires when customer subscribed to a service
+    has_mobile = customer_profile.get('has_mobile', True)
+    has_fixed  = customer_profile.get('has_fixed',  True)
 
     health_score = calculate_health_score(
         frustration_score, open_cases, total_contacts, quotes_analysis,
-        mobile_active, fixed_active, critical_open_count, high_open_count
+        mobile_active, fixed_active, critical_open_count, high_open_count,
+        has_mobile_service=has_mobile, has_fixed_service=has_fixed
     )
     metrics['health_score'] = {
         'value': health_score,
@@ -3310,7 +3314,8 @@ def generate_dashboard_metrics(summary_json, payload):
 
 def calculate_health_score(frustration_score, open_cases, total_contacts, quotes_analysis,
                           mobile_active=True, fixed_active=True,
-                          critical_open_count=0, high_open_count=0):
+                          critical_open_count=0, high_open_count=0,
+                          has_mobile_service=None, has_fixed_service=None):
     """
     Calculate health score (0-100, higher is better).
 
@@ -3319,30 +3324,53 @@ def calculate_health_score(frustration_score, open_cases, total_contacts, quotes
     - Open cases: -10 points per open case
     - High contacts: -5 points if > 5 contacts in 30 days
     - Threats: -15 points if any threats detected
-    - BUG FIX #7: Both services inactive = Hard cap at 20 (Critical)
-    - BUG FIX #7: One service inactive = -60 points (increased from 40)
+    - B12 FIX: Both services inactive = Hard cap at 20 (Critical)
+    - B12 FIX: ONE service inactive (only if customer SUBSCRIBED to it) = -60
     - B-001 FIX: Open CRITICAL issues = -30 each (max score 70)
     - B-001 FIX: Open HIGH issues = -15 each (max score 85 if no CRITICAL)
+
+    B12 FIX PARAMETERS:
+        has_mobile_service: True if customer ever subscribed to mobile (profile.has_mobile).
+        has_fixed_service:  True if customer ever subscribed to fixed  (profile.has_fixed).
+        These distinguish "never subscribed" from "subscribed but currently inactive".
+        Mobile-Only customers: has_fixed_service=False → fixed_active=False is NORMAL → no penalty.
+        When None (legacy callers), fall back to mobile_active/fixed_active as proxy.
     """
     health = 100
 
-    # BUG FIX #7: Inactive service penalty (applies even if no open cases)
-    # Check both mobile and fixed service status
-    # If BOTH services inactive: Critical health (hard cap at 20)
-    # If ONE service inactive: Significant penalty (-60)
-    if not mobile_active and not fixed_active:
-        # Customer has NO active services - Critical health
+    # B12 FIX: Inactive service penalty — ONLY when the customer SUBSCRIBES to that service.
+    #
+    # Root cause of the original bug:
+    #   `elif not mobile_active or not fixed_active: health -= 60`
+    # fired for Mobile-Only customers (has_fixed=False → fixed_active always False), flooring
+    # them at Warning (40) even with zero risk signals.
+    #
+    # Key insight: profile.has_mobile / profile.has_fixed are authoritative subscription flags.
+    # mobile_active / fixed_active are the CURRENT state — only meaningful when customer
+    # is actually subscribed.  If not subscribed, False is the expected normal value.
+    #
+    # When has_*_service is not supplied (legacy callers), treat active status as subscription proxy:
+    # a caller that passes mobile_active=True, fixed_active=True (or lets them default to True)
+    # will get the same behaviour as before — which is safe because that path is only hit when
+    # the caller already knows both services are expected.
+    eff_has_mobile = has_mobile_service if has_mobile_service is not None else mobile_active
+    eff_has_fixed  = has_fixed_service  if has_fixed_service  is not None else fixed_active
+
+    mobile_went_inactive = eff_has_mobile and not mobile_active
+    fixed_went_inactive  = eff_has_fixed  and not fixed_active
+
+    if eff_has_mobile and eff_has_fixed and not mobile_active and not fixed_active:
+        # Subscribed to BOTH; both now inactive → no active services → Critical cap
         health = 20
-        logger.info(f"  BUG FIX #7: Both mobile and fixed services inactive = Critical health (score capped at 20)")
-    elif not mobile_active or not fixed_active:
-        # One service inactive - significant penalty
-        inactive_services = []
-        if not mobile_active:
-            inactive_services.append('mobile')
-        if not fixed_active:
-            inactive_services.append('fixed')
-        health -= 60  # Increased from 40 to 60 for more severe impact
-        logger.info(f"  BUG FIX #7: {', '.join(inactive_services)} service inactive = -60 penalty (increased from 40)")
+        logger.info("  B12 FIX: Both subscribed services inactive → Critical (capped at 20)")
+    elif mobile_went_inactive or fixed_went_inactive:
+        inactive = []
+        if mobile_went_inactive:
+            inactive.append('mobile')
+        if fixed_went_inactive:
+            inactive.append('fixed')
+        health -= 60
+        logger.info(f"  B12 FIX: {', '.join(inactive)} service inactive (customer subscribed) → -60 penalty")
 
     # B-001 FIX: Apply penalties for open CRITICAL and HIGH priority issues
     if critical_open_count > 0:
@@ -4202,6 +4230,11 @@ def generate_revenue_reasoning(client, revenue_metric, context):
     monthly = context['monthly_revenue']
     annual = monthly * 12 if monthly else 0
     frustration = context['frustration_score']
+    # B10 FIX: read the computed revenue_segment so the LLM uses the canonical label
+    # Previously the prompt had no mention of revenue_segment, so the LLM invented its own
+    # relative language ("Moderate") that contradicted the Python-computed segment label.
+    customer_profile = context.get('customer_profile', {})
+    revenue_segment = customer_profile.get('revenue_segment') or 'Unknown'
 
     if frustration >= 60:
         impact_desc = "HIGH frustration makes this customer a priority despite revenue level"
@@ -4215,17 +4248,19 @@ def generate_revenue_reasoning(client, revenue_metric, context):
 **Structured Data:**
 - Monthly Revenue: €{monthly}
 - Annual Revenue: €{annual}
+- Revenue Segment (AUTHORITATIVE): {revenue_segment} — USE THIS EXACT LABEL when describing this customer's revenue tier. Do NOT substitute relative words like "Moderate" or "Low" if the segment says "High Value".
 - Frustration Score: {frustration}/100
 - SIM Count: {context['sim_count']}
 
 **Requirements:**
+- Use the Revenue Segment label verbatim (e.g. "High Value customer (€{monthly}/month)")
 - Contextualize revenue with risk level
 - Mention if quick resolution is critical
 - Keep it under 120 characters
 - No markdown, just plain text
 
 **Example Output:**
-"Low revenue (€25/month) but HIGH frustration makes this customer a priority. Quick resolution prevents negative sentiment."
+"High Value customer (€295/month) with HIGH frustration — quick resolution critical to protect €3,540/year revenue."
 
 Now generate the explanation:"""
 
@@ -4233,7 +4268,7 @@ Now generate the explanation:"""
         response = client.chat.completions.create(
             model=LLM_CONFIG.get("deployment_name", "gpt-4o"),
             messages=[
-                {"role": "system", "content": "You are a customer experience analyst. Generate clear, concise explanations for metrics."},
+                {"role": "system", "content": "You are a customer experience analyst. Generate clear, concise explanations for metrics. Always use the exact Revenue Segment label provided — never substitute your own wording."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -4241,14 +4276,25 @@ Now generate the explanation:"""
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        # Fallback
-        return f"€{monthly}/month revenue. {impact_desc}."
+        # Fallback — also use the segment label
+        return f"{revenue_segment} customer (€{monthly}/month). {impact_desc}."
 
 
 def generate_services_reasoning(client, services_metric, context):
     """Generate natural language reasoning for services."""
 
-    sim_count = context['sim_count']
+    # B11 FIX: Use customer_profile.plan_count as the single, authoritative sim_count.
+    # Root cause: context['sim_count'] was set from customer_profile.plan_count in
+    # generate_dashboard_metrics_reasoning(), but the LLM prompt also sees portfolio_context
+    # which may describe a *different* SIM count depending on how it was assembled.
+    # Result: reasoning said "9 SIMs" while elsewhere the summary said "Single SIM customer".
+    # Fix: derive sim_count directly from customer_profile (authoritative DB source) and
+    # label it explicitly so the LLM cannot substitute a different value from context.
+    customer_profile = context.get('customer_profile', {})
+    actual_sim_count = customer_profile.get('plan_count') if customer_profile else context.get('sim_count', 0)
+    if actual_sim_count is None:
+        actual_sim_count = 0
+
     # B7-M5 FIX: Get device context
     device_count = context.get('device_count', 0)
     device_revenue = context.get('device_financing_revenue', 0)
@@ -4266,7 +4312,7 @@ def generate_services_reasoning(client, services_metric, context):
 
 **Structured Data:**
 - Services: {', '.join(services_metric['items']) if services_metric['items'] else 'None'}
-- SIM Count: {sim_count}
+- SIM / Plan Count (AUTHORITATIVE, from billing system): {actual_sim_count} — USE THIS EXACT NUMBER. Do NOT use a different SIM count from any other context.
 - Device Contracts: {device_desc}
 - Status: {services_metric['status']}
 
@@ -4287,7 +4333,7 @@ Now generate the explanation:"""
         response = client.chat.completions.create(
             model=LLM_CONFIG.get("deployment_name", "gpt-4o"),
             messages=[
-                {"role": "system", "content": "You are a customer experience analyst. Generate clear, concise explanations for metrics."},
+                {"role": "system", "content": "You are a customer experience analyst. Generate clear, concise explanations for metrics. Always use the exact SIM/Plan count provided — never substitute a different number."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -5338,6 +5384,9 @@ def process_customer(conn, customer_id, run_date, watermark=None):
         # Recalculate health_score with updated counts
         mobile_active = customer_profile.get('mobile_active', True) if customer_profile else True
         fixed_active = customer_profile.get('fixed_active', True) if customer_profile else True
+        # B12 FIX: subscription flags so single-service customers are not penalised
+        has_mobile = customer_profile.get('has_mobile', True) if customer_profile else True
+        has_fixed  = customer_profile.get('has_fixed',  True) if customer_profile else True
 
         recalculated_health = calculate_health_score(
             frustration_score,
@@ -5347,7 +5396,9 @@ def process_customer(conn, customer_id, run_date, watermark=None):
             mobile_active,
             fixed_active,
             critical_from_key_issues,
-            high_from_key_issues
+            high_from_key_issues,
+            has_mobile_service=has_mobile,
+            has_fixed_service=has_fixed
         )
 
         original_health = dashboard_metrics['health_score']['value']
@@ -5485,6 +5536,18 @@ def process_customer(conn, customer_id, run_date, watermark=None):
                 # Multiple SIMs — should say Multi-SIM, not Single SIM
                 summary_json['retention_risk_signals']['churn_risk_magnification'] = "Multi-SIM risk"
                 logger.info(f"  Overrode churn_risk_magnification: 'Single SIM risk' → 'Multi-SIM risk' for sim_count={sim_count}")
+
+        # B_VAR FIX: Sync value_at_risk.churn_risk_magnification from retention_risk_signals.
+        # Root cause: retention_risk_signals.churn_risk_magnification is corrected above
+        # (Single→Multi-SIM, or cleared), but value_at_risk.churn_risk_magnification is never
+        # updated.  Result: two different magnification labels coexist in the same record.
+        corrected_magnification = summary_json['retention_risk_signals'].get('churn_risk_magnification')
+        if 'value_at_risk' not in summary_json:
+            summary_json['value_at_risk'] = {}
+        var_magnification = summary_json['value_at_risk'].get('churn_risk_magnification')
+        if var_magnification != corrected_magnification:
+            summary_json['value_at_risk']['churn_risk_magnification'] = corrected_magnification
+            logger.info(f"  B_VAR FIX: Synced value_at_risk.churn_risk_magnification: '{var_magnification}' → '{corrected_magnification}'")
 
         # CRITICAL FIX: Override retention_priority for never-activated customers
         # Customers with tenure_months=0 and no revenue never activated service, so retention_priority should be false
