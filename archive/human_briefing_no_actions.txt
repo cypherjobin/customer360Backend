@@ -1,0 +1,20 @@
+================================================================================
+HUMAN BRIEFING (without recommended actions) - Customer 21021333
+================================================================================
+
+[human_briefing]
+⚠️ Escalation Risk: Medium  ⚡ Friction: Unresolved Porting Issue
+
+Low-value customer (€30/month) with 2 SIMs. Customer has been experiencing an unresolved issue with a temporary number showing on their SIM card after porting from Sky to Virgin Media. This issue has persisted since January 29, 2026, and ServiceNow case INC0466560 remains On Hold. Customer has contacted multiple times (10+ calls) about this issue, expressing frustration.
+
+Immediate resolution is required to prevent further dissatisfaction and potential churn.
+
+================================================================================
+RECOMMENDED ACTIONS (separate section)
+================================================================================
+
+issue_resolution_actions: 1 actions
+  1. Expedite resolution of ServiceNow case INC0466560 (Temporary Number After Porting). Case has been On...
+
+CHECK: Does human_briefing contain Recommended Action?
+OK: No Recommended Action in human_briefing

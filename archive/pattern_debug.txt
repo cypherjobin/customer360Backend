@@ -1,0 +1,6 @@
+Pattern matches:
+  unable to: 20 points
+  never received: 25 points
+
+Total score: 45
+Plus 15 bonus for 2+ issues = 60

@@ -1,0 +1,32 @@
+================================================================================
+ENHANCED SOURCE SUMMARIES - Customer 10146594
+================================================================================
+
+[human_briefing]
+⚠️ Escalation Risk: Medium  ⚡ Friction: Unresolved GDPR Case
+
+Low-value customer (€30/month) with 2 SIMs and 2 devices. Customer has an unresolved GDPR case (E-899062) open for 19 days, which requires immediate attention. Multiple billing and service issues were resolved recently, including ServiceNow incidents INC0463883 and INC0463295 (both closed on February 6, 2026).
+
+🎯 Recommended Action
+1. Resolve GDPR case E-899062 promptly.
+2. Verify billing and service stability before considering any upsell opportunities.
+
+[pega_cases_summary]
+Customer has 4 Pega cases. ⚠️ 1 unresolved case (E-899062) has been Pending-AgentReview for 19 days since February 6, 2026. ✅ 3 cases resolved: E-902040 (resolved February 10, 2026), E-900006 (resolved February 10, 2026), and C-1003142 (resolved February 9, 2026).
+
+[servicenow_summary]
+Customer experienced 2 service incidents causing service suspension. Both incidents (INC0463883 and INC0463295) were resolved on February 6, 2026. These suspensions caused significant inconvenience.
+
+[call_recordings_summary]
+No call recordings available. Analysis based on interaction wrap-up comments shows customer expressed frustration about billing disputes and service suspensions. Multiple escalation threats noted in agent comments.
+
+[interactions_summary]
+Customer contacted 27 times in 30 days (all via phone). Topics included billing issues, service suspensions, and GDPR-related concerns. High contact frequency with 10 calls on February 13, 2026, indicates urgency.
+
+================================================================================
+GROUNDING CHECK
+================================================================================
+✓ pega_cases_summary: Contains case IDs
+✓ pega_cases_summary: Contains date references
+✓ servicenow_summary: Contains incident IDs
+✓ servicenow_summary: Contains customer impact context

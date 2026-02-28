@@ -1,0 +1,22 @@
+================================================================================
+HUMAN BRIEFING - Customer 21021333
+================================================================================
+
+[who_are_they]
+2 SIMs, no devices, €30/month
+
+[whats_happened]
+Ongoing unresolved issue with temporary number showing after porting, ServiceNow case INC0466560 open since February 11, 2026.
+
+[what_to_do]
+Focus on resolving the porting issue (INC0466560) immediately. Do NOT upsell or promote additional services until resolved.
+
+[human_briefing] - NEW FIELD
+⚠️ Escalation Risk: Medium  ⚡ Friction: Unresolved Porting Issue
+
+Low-value customer (€30/month) with 2 SIMs. Customer has been experiencing an unresolved issue with a temporary number showing after porting from Sky to Virgin Media. ServiceNow case INC0466560 has been open since February 11, 2026. Multiple contacts (10+) have been made regarding this issue, indicating frustration.
+
+🎯 Recommended Action
+Resolve ServiceNow case INC0466560 immediately. Verify that the correct number is active on the SIM card and confirm resolution with the customer. Avoid upselling or promoting additional services until the issue is fully resolved.
+
+================================================================================

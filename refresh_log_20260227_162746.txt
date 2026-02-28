@@ -1,0 +1,3 @@
+usage: refresh_revenue_cache_oracle_v3.py [-h] [--dry-run]
+                                          [--window-days WINDOW_DAYS] [--all]
+refresh_revenue_cache_oracle_v3.py: error: unrecognized arguments: --all-customers

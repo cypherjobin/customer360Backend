@@ -1,0 +1,84 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment and credentials
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs
+*.log
+logs/
+debug/
+export/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude/memory
+.claude/
+
+# Project specific
+*.bat
+*.docx
+pkdm_tables.docx
+README.txt
+SESSION_SUMMARY.md
+config/
+
+# Memory and Claude files
+memory/
+*.jsonl
+
+# Test outputs
+test_*.txt
+test_*.json
+debug_*.txt
+
+# SQL dumps
+*.sql
+!**/migrations/*.sql
+
+# Cache
+*.cache
+.pytest_cache/
+.coverage
+
+# ChromaDB and FAISS databases (runtime data, not source code)
+VIBO/chromadb/
+VIBO/chromadb_v2/
+VIBO/faiss_store/
+**/*.sqlite3
+**/*.bin
+**/*.index
+**/*.pkl

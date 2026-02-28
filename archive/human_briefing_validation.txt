@@ -1,0 +1,113 @@
+================================================================================
+CUSTOMER: 21021333
+================================================================================
+
+[human_briefing]
+⚠️ Escalation Risk: Medium  ⚡ Friction: Unresolved Porting Issue
+
+Low-value customer (€30/month) with 2 SIMs. Customer has been experiencing an unresolved issue with a temporary number showing after porting from Sky to Virgin Media. ServiceNow case INC0466560 has been open since February 11, 2026. Multiple contacts (10+) have been made regarding this issue, indicating frustration.
+
+🎯 Recommended Action
+Resolve ServiceNow case INC0466560 immediately. Verify that the correct number is active on the SIM card and confirm resolution with the customer. Avoid upselling or promoting additional services until the issue is fully resolved.
+
+[dashboard_metrics]
+Health: 57/100 (At Risk) | Churn Risk: 45/100 (Low)
+
+✓ GROUNDED: Contains case ID reference
+✓ GROUNDED: Contains revenue reference
+✓ GROUNDED: Contains date/time reference
+
+================================================================================
+CUSTOMER: 10032522
+================================================================================
+
+[human_briefing]
+✅ Customer Stable: Low Friction
+Low-value customer (€20/month) with Mobile service. Recently started a new device contract (Samsung Galaxy A36, 256GB) on January 15, 2026, ending January 14, 2028. No active issues or cases reported.
+
+🎯 Recommended Action
+1. Verify customer satisfaction with their new device.
+2. Ensure no billing or service concerns.
+3. Offer assistance with any questions about their plan or device.
+
+[dashboard_metrics]
+Health: 100/100 (Healthy) | Churn Risk: 10/100 (Very Low)
+
+✓ GROUNDED: Contains revenue reference
+✓ GROUNDED: Contains date/time reference
+
+================================================================================
+CUSTOMER: 10611158
+================================================================================
+
+[human_briefing]
+⚠️ Escalation Risk: High  ⚡ Friction: SIM Activation & Porting Issues
+
+📋 Customer Profile:
+- Medium-value customer (€92.25/month from plans) with 4 SIMs.
+- No devices currently associated.
+
+📌 Current Situation:
+- Ongoing SIM activation and porting issues since January 2026.
+- Recent unresolved case: Port-in failure (Call ID: 2807, Feb 17, 2026).
+- Customer expressed frustration: 'I'm fuming at this stage.'
+
+🎯 Recommended Actions:
+1. Expedite resolution of SIM activation and porting issues.
+2. Verify all SIMs are active and functioning correctly.
+3. Apologize for delays and provide a clear timeline for resolution.
+
+🚫 Do NOT upsell or promote new services until all issues are resolved.
+
+[dashboard_metrics]
+Health: 72/100 (Warning) | Churn Risk: 27/100 (Low)
+
+✓ GROUNDED: Contains revenue reference
+✓ GROUNDED: Contains date/time reference
+
+================================================================================
+CUSTOMER: 10540700
+================================================================================
+
+[human_briefing]
+🚨 Escalation Risk: HIGH ⚡ Friction: Fraud & Delivery Issues
+
+High-value customer (€975/month) with 1 SIM and 2 devices. The customer reported fraudulent activity on February 13, 2026 (Call ID: 596) and has been in contact multiple times about unauthorized orders and impersonation attempts. Additionally, there are unresolved device delivery issues (ServiceNow case SN-266121, closed on February 12, 2026).
+
+🎯 Recommended Actions:
+1. Resolve fraud concerns: Ensure account security and verify unauthorized orders.
+2. Address device delivery issues: Confirm the status of the returned device and ensure proper resolution.
+3. NO upsell or marketing until all issues are resolved.
+
+📊 Data Sources Used: Revenue_Cache, Interactions, Pega Cases, ServiceNow, Call Recordings, Devices
+
+[dashboard_metrics]
+Health: 45/100 (At Risk) | Churn Risk: 70/100 (Medium)
+
+✓ GROUNDED: Contains case ID reference
+✓ GROUNDED: Contains revenue reference
+✓ GROUNDED: Contains date/time reference
+
+================================================================================
+CUSTOMER: 21006766
+================================================================================
+
+[human_briefing]
+⚠️ Escalation Risk: Medium  ⚡ Friction: Recently Resolved Issues
+
+Low-value customer (€30/month) with Mobile service and 2 SIMs. Customer experienced service disruptions due to unresolved billing and SIM issues. Key cases:
+- Pega case C-1028049 (Resolved on Feb 24, 2026 - all services restored)
+- ServiceNow case INC0472126 (Resolved on Feb 25, 2026 - network issue resolved)
+
+🎯 Recommended Action:
+1. Verify all services are restored and billing is accurate.
+2. Apologize for the inconvenience and ensure no further disruptions.
+3. Monitor for any recurring issues.
+
+[dashboard_metrics]
+Health: 67/100 (Warning) | Churn Risk: 33/100 (Low)
+
+✓ GROUNDED: Contains case ID reference
+✓ GROUNDED: Contains revenue reference
+✓ GROUNDED: Contains date/time reference
+

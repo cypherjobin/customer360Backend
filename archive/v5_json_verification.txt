@@ -1,0 +1,43 @@
+JSON STRUCTURE VERIFICATION - Customer 10030003
+================================================================================
+
+Top Level Keys (22 total):
+  agent_briefing: dict (5 keys)
+  customer_id: str
+  customer_narrative: dict (6 keys)
+  customer_quotes: list (1 items)
+  dashboard_metrics: dict (6 keys)
+  escalation_risk: str
+  execution_metadata: dict (8 keys)
+  input_data_summary: dict (6 keys)
+  interaction_summary: dict (6 keys)
+  key_issues: list (1 items)
+  next_best_action: dict (3 keys)
+  predictive_insights: dict (5 keys)
+  recommended_actions: dict (4 keys)
+  retention_risk_signals: dict (3 keys)
+  sentiment_analysis: dict (5 keys)
+  source_summaries: dict (4 keys)
+  summary_date_display: str
+  summary_for_date: str
+  summary_generated_at: str
+  threat_indicators: dict (4 keys)
+  value_at_risk: dict (9 keys)
+  watermark: str
+
+Dashboard Metrics:
+  health_score: {'value': 100, 'label': 'Healthy', 'color': 'green', 'trend': {'direction': 'sta
+  churn_risk: {'score': 10, 'probability': 'Very Low', 'color': 'green', 'trend': {'direction'
+  effort_score: {'value': 1.0, 'label': 'Very Low Effort', 'color': 'green', 'reasoning': '"Effo
+  escalation_risk: {'value': 0, 'label': 'Low', 'color': 'green', 'reasoning': 'No escalation threa
+  revenue: {'monthly': 15.0, 'monthly_display': '€15.0', 'annual': 180.0, 'annual_display':
+  services: {'items': ['Mobile'], 'status': 'Active', 'color': 'green', 'reasoning': '"Activ
+
+================================================================================
+REQUIRED KEYS CHECK:
+  customer_id: PASS
+  dashboard_metrics: PASS
+  execution_metadata: PASS
+  input_data_summary: PASS
+
+JSON VALIDATION: PASS
